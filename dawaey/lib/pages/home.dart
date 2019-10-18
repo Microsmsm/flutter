@@ -1,68 +1,52 @@
+import 'package:dawaey/models/drug_model.dart';
 import 'package:dawaey/providers/drug.dart';
 import 'package:dawaey/types/drug.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:diff_match_patch/diff_match_patch.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:provider/provider.dart';
 
+
+class HomePage extends StatefulWidget {
+  const HomePage({Key key}) : super(key: key);
+
+  @override
+  _HomePageState createState() => _HomePageState();
+}
 
 class _HomePageState extends State<HomePage> {
-  List<Drug> drugs;
-  StreamController controller = new StreamController<List<Drug>>.broadcast();
+
+  DrugModel model;
+
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
-    fetchDrugs().then((data){
-      drugs = data;
+    SchedulerBinding.instance.addPostFrameCallback((_){
+      model.getDrugs();
     });
-    controller.addStream(fetchDrugs().asStream());
-  }
-
-  getStream() {
-    return controller.stream;
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      children: <Widget>[
-        searchCard(),
-        SizedBox(
-          height: MediaQuery.of(context).size.height - 30,
-          child: drugStreamList(),
-        )
-      ],
+    return Consumer<DrugModel>(
+      builder: (context,model,_){
+        this.model = model;
+        return ListView(
+          children: <Widget>[
+            searchCard(model),
+            SizedBox(
+              height: MediaQuery.of(context).size.height - 30,
+              child: drugList(model),
+            )
+          ],
+        );
+      },
     );
+
   }
 
-
-
-  doSearch(List<Drug> data, term) {
-    normalFilter(Drug drug) => drug.tradename.toLowerCase().toString().contains(term);
-    fussyFilter(Drug drug){
-      var matcher = new DiffMatchPatch();
-      matcher.matchThreshold = 0.3;
-      matcher.matchDistance = 14;
-      return matcher.match(drug.tradename.toLowerCase().toString(), term, 0) >-1?true:false;
-    }
-
-    List<Drug> filteredList = data.where(normalFilter).toList();
-
-    //found results
-    if(filteredList.length >= 1){
-      controller.add(filteredList);
-    }else{
-      //didn't find
-      List<Drug> fussyList = data.where(fussyFilter).toList();
-      controller.add(fussyList);
-    }
-  }
-
-  onTextChanged(text){
-     doSearch(drugs, text);
-  }
-
-  Widget searchCard() {
+  Widget searchCard(DrugModel model) {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: Card(
@@ -80,7 +64,9 @@ class _HomePageState extends State<HomePage> {
                 child: TextField(
                   decoration: InputDecoration(
                       border: InputBorder.none, hintText: "Find our product"),
-                  onChanged: onTextChanged,
+                  onChanged: (text){
+                    model.doSearch(text);
+                  },
                 ),
               ),
               Icon(Icons.menu),
@@ -91,39 +77,24 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget drugListView(BuildContext context, AsyncSnapshot snapshot) {
-    List<Drug> values = snapshot.data;
+  Widget drugList(DrugModel model) {
+    if (model.error != null){
+      return Text("Error: ${model.error}");
+    }
+
+    if (model.isLoading){
+      return Text("Loading...");
+    }
+
     return new ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       shrinkWrap: true,
-      itemCount: values.length,
+      itemCount: model.filteredList.length,
       itemBuilder: (BuildContext context, int index) {
-        return drugCard(values[index]);
+        return drugCard(model.filteredList[index]);
       },
     );
   }
-
-  Widget drugStreamList() {
-    return new StreamBuilder<List<Drug>>(
-      stream: getStream(),
-      builder: (BuildContext context, AsyncSnapshot snapshot) {
-        if (snapshot.hasError) return Text('Error: ${snapshot.error}');
-        switch (snapshot.connectionState) {
-          case ConnectionState.none:
-            return Text('Status: none');
-          case ConnectionState.waiting:
-            return Text('Loading...');
-          case ConnectionState.active:
-            return drugListView(context, snapshot);
-          //add data here
-          case ConnectionState.done:
-            return drugListView(context, snapshot);
-        }
-        return null; //unreachable
-      },
-    );
-  }
-
 
   Widget drugCard(Drug drug) {
     return new Column(
@@ -140,9 +111,4 @@ class _HomePageState extends State<HomePage> {
       ],
     );
   }
-}
-
-class HomePage extends StatefulWidget {
-  @override
-  _HomePageState createState() => new _HomePageState();
 }
